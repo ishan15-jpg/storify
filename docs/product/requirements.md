@@ -7,22 +7,22 @@
 
 ---
 
-## 2. Confirmed Functional Requirements
+## 2. Functional Requirements
 
 ### 2.1 Files & Folders
 * **Maximum File Size:** 1GB per file.
-* **Upload Strategy:** Multipart / chunked uploads to reliably handle files up to 1GB. Direct-to-cloud uploads via Supabase.
+* **Upload Strategy:** Multipart / chunked uploads to reliably handle files up to 1GB. Direct-to-cloud uploads.
 * **Folder Structure:** Support for infinitely nested folder structures.
 * **Hierarchy Modeling:** Materialized Path (Path Enumeration) pattern to represent ancestry and resolve hierarchy efficiently.
 
 ### 2.2 Access Control, Roles & Permissions
 * **User Roles & Specific Permissions:**
   * **Owner:** Full access. Has the ability to transfer ownership of a file or folder to another user.
-  * **Editor:** Can update/modify file contents and metadata. Cannot delete files originally uploaded by the owner (can only delete files they uploaded themselves). Can share the folder with new users and generate public links.
+  * **Editor:** Can update/modify file contents and metadata. Can share the folder with new users and generate public links. An editor can only delete files and folders they own. An editor cannot perform move or delete operations on a folder they own if it contains items uploaded by the owner.
   * **Viewer:** Read and download access only.
   * **Public User:** Access via shared link (read/download only via unique link).
 * **Inheritance:** Permissions are strictly inherited down the folder tree from parent to child.
-* **Public Share Links:** Ability to generate public links for files/folders with optional expiration dates and optional password protection.
+* **Public Share Links:** Ability to generate public links for files/folders with optional expiration dates and optional password protection. Access to password-protected links is verified via a short-lived scoped public JWT.
 
 ### 2.3 File Management & Organization
 * **Search Filters:** Users can search and filter files/folders based on metadata (name, type, size, dates).
@@ -31,23 +31,23 @@
 
 ---
 
-## 3. Non-Functional Requirements (NFRs)
+## 3. Non-Functional Requirements 
 
 ### 3.1 Durability & Data Loss
-* Zero data loss for uploaded files; file storage durability delegated to Supabase Storage.
+* Zero data loss for uploaded files; file storage durability delegated to third-party blob storage provider.
 
 ### 3.2 Consistency vs. Availability
-* **Metadata Consistency:** Strong consistency (ACID) for metadata operations (creating, moving, deleting, sharing files/folders) enforced by PostgreSQL.
+* **Metadata Consistency:** Strong consistency (ACID) for metadata operations (creating, moving, deleting, sharing files/folders) enforced by the relational database.
 * **Availability:** Moderate availability acceptable for MVP.
 
 ### 3.3 Performance & Latency
-* **Metadata Operations:** Fast response times (< 200ms) for folder listing and permission checks, heavily leveraging PostgreSQL indices and Row Level Security (RLS).
-* **File Transfers:** Optimized by allowing clients to upload directly to Supabase Storage, bypassing custom backend bottlenecks.
+* **Metadata Operations:** Fast response times (< 200ms) for folder listing and permission checks, heavily leveraging database indices and Materialized Path query optimizations.
+* **File Transfers:** Optimized by allowing clients to upload directly to blob storage, bypassing custom backend bottlenecks.
 
 ### 3.4 Security & Authentication
 * **Data in Transit / At Rest:** HTTPS/TLS in transit, encrypted at rest.
-* **Authentication:** Supabase Auth handling OAuth (e.g., Google, GitHub) and JWT issuance.
-* **Authorization:** Supabase PostgreSQL Row Level Security (RLS) policies guaranteeing secure access to both database rows and storage objects.
+* **Authentication:** Stateless authentication handling OAuth and JWT issuance. For local development and initial testing, OAuth token verification is mocked.
+* **Authorization:** Application-level authorization in the Backend API Use Cases, evaluating ownership and Materialized Path downward inheritance (ADR 002), without relying on database-level Row Level Security (RLS).
 
 ---
 
@@ -64,15 +64,3 @@
 * **Previews & Thumbnails:** No server-side generation of previews, thumbnails, or transcoded media.
 * **Audit Logging:** Tracking exactly who viewed or downloaded files and when.
 * **Granular Overrides:** No capability to revoke or override inherited permissions at deeper sub-folder or file levels.
-
----
-
-## 6. Architecture & Tech Stack Decisions
-
-* **Unified Backend-as-a-Service:** Supabase (PostgreSQL, GoTrue Auth, Supabase Storage).
-* **Development Flow:** Local-first development using Supabase CLI (Docker), ensuring seamless migration to cloud deployment.
-* **Capacity Planning Estimates:**
-  * ~10,000 active users
-  * ~500 files per user on average (~10MB average file size)
-  * ~5,000,000 metadata records
-  * ~50TB total raw storage capacity

@@ -1,0 +1,1368 @@
+openapi: 3.0.3
+info:
+  title: Storify API Specification
+  description: REST API for Storify cloud storage platform providing file, folder, permission, and direct-to-cloud transfer management.
+  version: 1.0.0
+servers:
+  - url: /api/v1
+    description: Production & Local Base API Path
+
+paths:
+  # ---------------------------------------------------------------------------
+  # Users & Authentication
+  # ---------------------------------------------------------------------------
+  /users/me:
+    get:
+      summary: Get current authenticated user profile
+      description: Returns the user profile including their default root folder identifier.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: User profile details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    delete:
+      summary: Delete user account
+      description: Cascades deletion of all user folders, files, and permissions.
+      security:
+        - BearerAuth: []
+      responses:
+        '204':
+          description: Account successfully deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ---------------------------------------------------------------------------
+  # Folders
+  # ---------------------------------------------------------------------------
+  /folders:
+    post:
+      summary: Create a new folder
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFolderRequest'
+      responses:
+        '201':
+          description: Folder created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Folder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /folders/{id}:
+    get:
+      summary: Get folder details and immediate children
+      description: Returns folder metadata alongside immediate child subfolders and files. Pass 'root' as the id to retrieve user's root folder.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Folder ULID or 'root'
+      responses:
+        '200':
+          description: Folder details with contents
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderContentsResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      summary: Rename a folder
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenameRequest'
+      responses:
+        '200':
+          description: Folder renamed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Folder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    delete:
+      summary: Soft delete folder (Move to trash)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Folder moved to trash
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Folder'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /folders/{id}/move:
+    post:
+      summary: Move folder to a new parent folder
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoveFolderRequest'
+      responses:
+        '200':
+          description: Folder moved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Folder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /folders/{id}/restore:
+    post:
+      summary: Restore folder from trash
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Folder restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Folder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ---------------------------------------------------------------------------
+  # Files (Direct-to-Cloud Uploads / Downloads)
+  # ---------------------------------------------------------------------------
+  /files/upload-url:
+    post:
+      summary: Request direct-to-cloud pre-signed upload URL
+      description: Validates write permissions and creates a PENDING file record. Returns pre-signed URL(s) for direct S3 upload.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InitiateUploadRequest'
+      responses:
+        '201':
+          description: Pre-signed upload URL generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InitiateUploadResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /files/{id}/complete:
+    post:
+      summary: Complete direct-to-cloud upload
+      description: Verifies object existence in S3 and transitions file state from PENDING to COMPLETED.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Upload confirmed and file marked COMPLETED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/File'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /files/{id}/download-url:
+    get:
+      summary: Request pre-signed download URL
+      description: Generates a secure time-limited S3 pre-signed download URL for authorized users.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Pre-signed download URL generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadUrlResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /files/{id}:
+    get:
+      summary: Get file metadata
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: File metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/File'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      summary: Rename a file
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenameRequest'
+      responses:
+        '200':
+          description: File renamed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/File'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    delete:
+      summary: Soft delete file (Move to trash)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: File moved to trash
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/File'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /files/{id}/move:
+    post:
+      summary: Move file to another folder
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoveFileRequest'
+      responses:
+        '200':
+          description: File moved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/File'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /files/{id}/restore:
+    post:
+      summary: Restore file from trash
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: File restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/File'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ---------------------------------------------------------------------------
+  # Permissions & Collaboration
+  # ---------------------------------------------------------------------------
+  /folders/{id}/permissions:
+    get:
+      summary: List folder permissions
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of permissions for folder
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PermissionResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      summary: Grant folder permission to user
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantPermissionRequest'
+      responses:
+        '201':
+          description: Permission granted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PermissionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /files/{id}/permissions:
+    get:
+      summary: List single-file permissions
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of permissions for file
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PermissionResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      summary: Grant file permission to user
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantPermissionRequest'
+      responses:
+        '201':
+          description: Permission granted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PermissionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /permissions/{id}:
+    patch:
+      summary: Update collaborator role
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRoleRequest'
+      responses:
+        '200':
+          description: Permission updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PermissionResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    delete:
+      summary: Revoke collaborator access
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Permission revoked
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /shared-with-me:
+    get:
+      summary: List top-level shared items
+      description: Returns folders and files explicitly shared with the current user.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Shared items list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SharedWithMeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ---------------------------------------------------------------------------
+  # Public Links (Authenticated Management)
+  # ---------------------------------------------------------------------------
+  /public-links:
+    post:
+      summary: Create a public share link
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePublicLinkRequest'
+      responses:
+        '201':
+          description: Public link created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicLink'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /public-links/{id}:
+    get:
+      summary: Get public link details
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Public link metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicLink'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    delete:
+      summary: Revoke public link
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Public link revoked
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ---------------------------------------------------------------------------
+  # Public Endpoints (Unauthenticated / Public Link Consumers)
+  # ---------------------------------------------------------------------------
+  /public/links/{token}:
+    get:
+      summary: Resolve public link metadata
+      description: Fetches resource info and whether password protection is active.
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Public link token/ULID
+      responses:
+        '200':
+          description: Public link resolved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicLinkInfoResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          description: Link expired
+
+  /public/links/{token}/unlock:
+    post:
+      summary: Unlock password-protected public link
+      description: Verifies password and returns a scoped short-lived public JWT.
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnlockPublicLinkRequest'
+      responses:
+        '200':
+          description: Unlocked successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnlockPublicLinkResponse'
+        '401':
+          description: Invalid password
+        '410':
+          description: Link expired
+
+  /public/links/{token}/folder:
+    get:
+      summary: Browse folder contents via public link
+      description: Requires public authorization token in headers if password-protected.
+      security:
+        - PublicTokenAuth: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: folderId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Subfolder ID inside shared root
+      responses:
+        '200':
+          description: Public folder contents
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderContentsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /public/links/{token}/download-url:
+    get:
+      summary: Get direct download URL for publicly shared file
+      description: Pre-signed download URL generation dedicated to public consumers.
+      security:
+        - PublicTokenAuth: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: fileId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Specific file ID if link shares a folder
+      responses:
+        '200':
+          description: Pre-signed download URL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadUrlResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ---------------------------------------------------------------------------
+  # Trash & Permanent Purge
+  # ---------------------------------------------------------------------------
+  /trash:
+    get:
+      summary: List all trashed items
+      description: Returns top-level explicitly trashed folders and files.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Trashed items
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrashResponse'
+
+    delete:
+      summary: Empty trash (Async)
+      description: Triggers async purge of all trashed items for current user.
+      security:
+        - BearerAuth: []
+      responses:
+        '202':
+          description: Trash purge queued
+
+  /folders/{id}/permanent:
+    delete:
+      summary: Permanently delete folder (Async)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Permanent folder purge queued
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /files/{id}/permanent:
+    delete:
+      summary: Permanently delete file
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: File permanently deleted
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ---------------------------------------------------------------------------
+  # Starred / Favorites
+  # ---------------------------------------------------------------------------
+  /starred:
+    get:
+      summary: List all starred items
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Starred items
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StarredItemsResponse'
+
+    post:
+      summary: Star a folder or file
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StarItemRequest'
+      responses:
+        '201':
+          description: Item starred
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StarredItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /starred/{id}:
+    delete:
+      summary: Unstar an item
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Unstarred successfully
+
+  # ---------------------------------------------------------------------------
+  # Search
+  # ---------------------------------------------------------------------------
+  /search:
+    get:
+      summary: Global search
+      description: Search across accessible files and folders by name, MIME type, or scope.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: query
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: mimeType
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: folderId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResultsResponse'
+
+# -----------------------------------------------------------------------------
+# Components & Schemas
+# -----------------------------------------------------------------------------
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    PublicTokenAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Scoped public link token passed in Authorization header
+
+  responses:
+    BadRequest:
+      description: Invalid request parameters or body
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Missing or invalid authentication token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Permission denied for requested resource
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          example: FORBIDDEN
+        message:
+          type: string
+          example: You do not have permission to access this resource.
+        details:
+          type: object
+
+    UserResponse:
+      type: object
+      required:
+        - id
+        - email
+        - name
+        - rootFolderId
+        - createdAt
+      properties:
+        id:
+          type: string
+          example: 01HGF000000000000000000001
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        name:
+          type: string
+          example: Alex Doe
+        avatarUrl:
+          type: string
+          nullable: true
+        rootFolderId:
+          type: string
+          example: 01HGF000000000000000000002
+        createdAt:
+          type: string
+          format: date-time
+
+    Folder:
+      type: object
+      required:
+        - id
+        - name
+        - parentId
+        - ownerId
+        - isTrashed
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        parentId:
+          type: string
+          nullable: true
+        ownerId:
+          type: string
+        isTrashed:
+          type: boolean
+        trashedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    File:
+      type: object
+      required:
+        - id
+        - name
+        - folderId
+        - ownerId
+        - sizeBytes
+        - mimeType
+        - status
+        - isTrashed
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        folderId:
+          type: string
+        ownerId:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        mimeType:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, COMPLETED]
+        isTrashed:
+          type: boolean
+        trashedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    FolderContentsResponse:
+      type: object
+      required:
+        - folder
+        - subfolders
+        - files
+      properties:
+        folder:
+          $ref: '#/components/schemas/Folder'
+        subfolders:
+          type: array
+          items:
+            $ref: '#/components/schemas/Folder'
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/File'
+
+    CreateFolderRequest:
+      type: object
+      required:
+        - name
+        - parentId
+      properties:
+        name:
+          type: string
+          example: Documents
+        parentId:
+          type: string
+          example: 01HGF000000000000000000002
+
+    RenameRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          example: Financials_2026
+
+    MoveFolderRequest:
+      type: object
+      required:
+        - targetParentId
+      properties:
+        targetParentId:
+          type: string
+
+    MoveFileRequest:
+      type: object
+      required:
+        - targetFolderId
+      properties:
+        targetFolderId:
+          type: string
+
+    InitiateUploadRequest:
+      type: object
+      required:
+        - name
+        - folderId
+        - sizeBytes
+        - mimeType
+      properties:
+        name:
+          type: string
+          example: quarterly_report.pdf
+        folderId:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+          maximum: 1073741824
+        mimeType:
+          type: string
+          example: application/pdf
+
+    InitiateUploadResponse:
+      type: object
+      required:
+        - fileId
+        - uploadUrl
+        - uploadStrategy
+      properties:
+        fileId:
+          type: string
+        uploadUrl:
+          type: string
+        uploadStrategy:
+          type: string
+          enum: [SINGLE_PUT, MULTIPART]
+        parts:
+          type: array
+          items:
+            type: object
+            properties:
+              partNumber:
+                type: integer
+              uploadUrl:
+                type: string
+
+    DownloadUrlResponse:
+      type: object
+      required:
+        - downloadUrl
+        - expiresInSeconds
+      properties:
+        downloadUrl:
+          type: string
+        expiresInSeconds:
+          type: integer
+          example: 900
+
+    PermissionResponse:
+      type: object
+      required:
+        - id
+        - userId
+        - role
+        - createdAt
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        userEmail:
+          type: string
+        userName:
+          type: string
+        folderId:
+          type: string
+          nullable: true
+        fileId:
+          type: string
+          nullable: true
+        role:
+          type: string
+          enum: [OWNER, EDITOR, VIEWER]
+        createdAt:
+          type: string
+          format: date-time
+
+    GrantPermissionRequest:
+      type: object
+      required:
+        - email
+        - role
+      properties:
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [EDITOR, VIEWER]
+
+    UpdateRoleRequest:
+      type: object
+      required:
+        - role
+      properties:
+        role:
+          type: string
+          enum: [EDITOR, VIEWER]
+
+    SharedWithMeResponse:
+      type: object
+      required:
+        - folders
+        - files
+      properties:
+        folders:
+          type: array
+          items:
+            $ref: '#/components/schemas/Folder'
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/File'
+
+    PublicLink:
+      type: object
+      required:
+        - id
+        - createdBy
+        - hasPassword
+        - createdAt
+      properties:
+        id:
+          type: string
+        folderId:
+          type: string
+          nullable: true
+        fileId:
+          type: string
+          nullable: true
+        createdBy:
+          type: string
+        hasPassword:
+          type: boolean
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    CreatePublicLinkRequest:
+      type: object
+      properties:
+        folderId:
+          type: string
+        fileId:
+          type: string
+        password:
+          type: string
+          nullable: true
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    PublicLinkInfoResponse:
+      type: object
+      required:
+        - token
+        - resourceType
+        - resourceName
+        - requiresPassword
+      properties:
+        token:
+          type: string
+        resourceType:
+          type: string
+          enum: [FOLDER, FILE]
+        resourceName:
+          type: string
+        requiresPassword:
+          type: boolean
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    UnlockPublicLinkRequest:
+      type: object
+      required:
+        - password
+      properties:
+        password:
+          type: string
+
+    UnlockPublicLinkResponse:
+      type: object
+      required:
+        - publicToken
+        - expiresInSeconds
+      properties:
+        publicToken:
+          type: string
+        expiresInSeconds:
+          type: integer
+          example: 3600
+
+    TrashResponse:
+      type: object
+      required:
+        - folders
+        - files
+      properties:
+        folders:
+          type: array
+          items:
+            $ref: '#/components/schemas/Folder'
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/File'
+
+    StarItemRequest:
+      type: object
+      properties:
+        folderId:
+          type: string
+        fileId:
+          type: string
+
+    StarredItem:
+      type: object
+      required:
+        - id
+        - userId
+        - createdAt
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        folder:
+          $ref: '#/components/schemas/Folder'
+        file:
+          $ref: '#/components/schemas/File'
+        createdAt:
+          type: string
+          format: date-time
+
+    StarredItemsResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/StarredItem'
+
+    SearchResultsResponse:
+      type: object
+      required:
+        - folders
+        - files
+      properties:
+        folders:
+          type: array
+          items:
+            $ref: '#/components/schemas/Folder'
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/File'
