@@ -1,0 +1,22 @@
+name: continuous-integration-workflow
+on:
+  pull_request:
+    branches:
+      - main
+jobs: 
+  ci-workflow:
+    runs-on: ubuntu-latest
+    permissions: 
+      contents: read
+      pull-requests: write
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v7
+    - name: Set up Node.js
+      uses: actions/setup-node@v7
+      with:
+        node-version: 26.3.1
+        cache: "npm"
+    - run: npm ci
+    - run: npm run lint
+    - run: npm run test
