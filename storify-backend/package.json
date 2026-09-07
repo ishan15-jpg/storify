@@ -2,6 +2,7 @@
   "name": "storify-backend",
   "version": "0.1.0",
   "description": "Clean Architecture backend API for Storify Cloud Storage SaaS",
+  "type": "module",
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
@@ -11,7 +12,10 @@
     "test:watch": "vitest",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "migrate:up": "tsx src/infrastructure/database/migrations/cli.ts up",
+    "migrate:down": "tsx src/infrastructure/database/migrations/cli.ts down",
+    "migrate:status": "tsx src/infrastructure/database/migrations/cli.ts status"
   },
   "keywords": [
     "storify",
